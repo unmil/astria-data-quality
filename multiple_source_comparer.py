@@ -4,10 +4,11 @@ from tletools.pandas import load_dataframe
 import pandas as pd
 import json
 import country_converter as coco
-import datetime
+from datetime import datetime
+import dateutil.parser
 
 def leading_zero_removal(x):
-	return x.lstrip("0")
+	return x.lstrip("0").strip()
 
 def compare_data(source1, source2, mismatch):
 	if(source1[0] != source2[0]):
@@ -16,7 +17,7 @@ def compare_data(source1, source2, mismatch):
                 mismatch.append('inclination')
 	if(abs(source1[2] - source2[2]) > 0.0001):
                 mismatch.append('eccentricity')
-	if(datetime.strptime(source1[3], "%d/%m/%Y").strftime('%Y-%m-%d') != datetime.strptime(source2[3], "%d/%m/%Y").strftime('%Y-%m-%d')):
+	if(pd.Timestamp(source1[3]).to_pydatetime().date() != datetime.strptime(source2[3], '%Y-%m-%d').date()):
                 mismatch.append('launch date')
 	if(source1[4] != source2[4]):
                 mismatch.append('country')
@@ -30,14 +31,15 @@ ucs_df = pd.read_excel(ucs_file_name)
 ucs_df[['Detailed Purpose', 'Country/Org of UN Registry', 'Type of Orbit', 'Contractor', 'Country of Contractor', 'Launch Site']] = ucs_df[['Detailed Purpose', 'Country/Org of UN Registry', 'Type of Orbit', 'Contractor', 'Country of Contractor', 'Launch Site']].fillna(value='')
 
 ucs_df[['Period (minutes)', 'Launch Mass (kg.)', 'Dry Mass (kg.)', 'Power (watts)', 'Expected Lifetime (yrs.)']] = ucs_df[['Period (minutes)', 'Launch Mass (kg.)', 'Dry Mass (kg.)', 'Power (watts)', 'Expected Lifetime (yrs.)']].fillna(value=-999999999999)
-ucs_df['NORAD Number'] = ucs_df['NORAD Number'].astype('string')
+ucs_df['NORAD Number'] = ucs_df['NORAD Number'].astype('int')
 
 jspoc_df = load_dataframe(jspoc_file_name)
 satcat_df = pd.DataFrame(json.load(open(satcat_file_name)))
 
 jspoc_df.rename(columns={'norad': 'NORAD_CAT_ID', 'ecc': 'Eccentricity', 'inc': 'Inclination (degrees)'}, inplace = "True")
-jspoc_df["NORAD_CAT_ID"] = jspoc_df["NORAD_CAT_ID"].apply(leading_zero_removal)
-satcat_df["NORAD_CAT_ID"] = satcat_df["NORAD_CAT_ID"].astype('string')
+jspoc_df["NORAD_CAT_ID"] = jspoc_df["NORAD_CAT_ID"].apply(leading_zero_removal).astype('int')
+jspoc_df["name"] = jspoc_df["name"].apply(leading_zero_removal)
+satcat_df["NORAD_CAT_ID"] = satcat_df["NORAD_CAT_ID"].astype('int')
 jspoc_df = jspoc_df.merge(satcat_df, how='inner', on='NORAD_CAT_ID')
 
 #test = ucs_df['Country/Org of UN Registry'].append(jspoc_df['COUNTRY']).unique()
@@ -72,7 +74,6 @@ mismatch = []
 for norad_id in norad_ids:
 	mismatch = []
 	if(norad_id in ucs_data.keys() and norad_id in jspoc_data.keys()):
-		print(norad_id)
 		mismatch = compare_data(ucs_data[norad_id], jspoc_data[norad_id], mismatch)
 		if(len(mismatch) > 0):
 			partial_match[norad_id] = mismatch
@@ -82,6 +83,10 @@ for norad_id in norad_ids:
 		discrepency[norad_id] = ucs_file_name if norad_id in ucs_data else jspoc_file_name	
 
 res = json.dumps({'complete match': complete_match, 'partial match': partial_match, 'discrepency': discrepency}, indent = 4)
+print("Total unique satellites: {0}".format(len(norad_ids)))
+print("Complete match: {0}[{1}%]".format(len(complete_match), len(complete_match)*100/len(norad_ids)))
+print("Partial match: {0}[{1}%]".format(len(partial_match.keys()), len(partial_match.keys())*100/len(norad_ids)))
+print("Discrepency: {0}[{1}%]".format(len(discrepency.keys()), len(discrepency.keys())*100/len(norad_ids)))
 with open("ucs_jspoc_compare.json", 'w') as outfile:
 	outfile.write(res)
 	
