@@ -56,17 +56,20 @@ def isFileNotMerged(start_date, end_date, file_name, current_db_information):
                         and (datetime.strptime( Path(file_name).stem, "%Y-%m-%d") <= datetime.strptime(end_date, "%Y-%m-%d")))
 
 def update_JSPOC_database(start_date, end_date):
-        file_list = glob.glob("../../test_JSPOC/TLE/*.tle")
         current_db_information = {}
         updated_json = {}
         try:
                 with open("current_db_information.json") as json_file:
                         current_db_information = json.load(json_file)
         except FileNotFoundError:
-                print("Error: Could not load metadata file. Creating new metadata file. Stop the code if it is unexpected.")
+                print("Error: Could not load metadata file. Exiting....")
+                return
 
-        if "JSPOC" not in current_db_information:
-                current_db_information["JSPOC"] = {}
+        if "JSPOC" not in current_db_information or "source_file_directory" not in current_db_information["JSPOC"]:
+                print("Error: Missing data source location. Exiting....")
+                return
+        
+        file_list = glob.glob(current_db_information["JSPOC"]["source_file_directory"])
 
         start_date, end_date = convert_date_range(start_date, end_date, current_db_information["JSPOC"])
         current_lowest_date = "9999-12-31"
