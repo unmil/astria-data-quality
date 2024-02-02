@@ -1,0 +1,8 @@
+{
+  "JSPOC": {
+    "source_file_directory": "../../test_JSPOC/TLE/",
+    "created_database_name": "updated_database.json",
+    "start_date": "2022-01-01",
+    "end_date": "2023-03-21"
+  }
+}

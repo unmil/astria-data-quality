@@ -5,6 +5,7 @@ import glob
 from pathlib import Path
 import json
 from datetime import datetime
+from dateutil.parser import parse
 
 def leading_zero_removal(x):
         return x.lstrip("0")
@@ -22,7 +23,7 @@ def verify_date(new_date):
         return res
 
 def convert_date_range(start_date, end_date, current_db_information):
-        if start_date is None or current_db_information == {}:
+        if start_date is None or not verify_date(current_db_information["start_date"]):
                 return start_date, end_date
         
         if datetime.strptime(current_db_information["end_date"], "%Y-%m-%d") < datetime.strptime(start_date, "%Y-%m-%d"):
@@ -37,7 +38,7 @@ def convert_date_range(start_date, end_date, current_db_information):
         return start_date, end_date
 
 def update_date_range(start_date, end_date, data_source, current_db_information):
-        if current_db_information[data_source] == {}:
+        if "start_date" not in current_db_information[data_source] or not verify_date(current_db_information[data_source]["start_date"]):
                 current_db_information[data_source]["start_date"] = start_date
                 current_db_information[data_source]["end_date"] = end_date
         else:
@@ -48,7 +49,7 @@ def update_date_range(start_date, end_date, data_source, current_db_information)
 
 def isFileNotMerged(start_date, end_date, file_name, current_db_information):
         if start_date is None:
-                return (current_db_information == {} 
+                return (start_date not in  current_db_information
                         or datetime.strptime( Path(file_name).stem, "%Y-%m-%d") < datetime.strptime(current_db_information["start_date"], "%Y-%m-%d") 
                         or datetime.strptime( Path(file_name).stem, "%Y-%m-%d") > datetime.strptime(current_db_information["end_date"], "%Y-%m-%d"))
         else:
@@ -59,7 +60,7 @@ def update_JSPOC_database(start_date, end_date):
         current_db_information = {}
         updated_json = {}
         try:
-                with open("current_db_information.json") as json_file:
+                with open("config.json") as json_file:
                         current_db_information = json.load(json_file)
         except FileNotFoundError:
                 print("Error: Could not load metadata file. Exiting....")
@@ -69,17 +70,20 @@ def update_JSPOC_database(start_date, end_date):
                 print("Error: Missing data source location. Exiting....")
                 return
         
-        file_list = glob.glob(current_db_information["JSPOC"]["source_file_directory"])
+        if "created_database_name" not in current_db_information["JSPOC"] or current_db_information["JSPOC"]["created_database_name"] == "":
+                current_db_information["JSPOC"]["created_database_name"] = "updated_database.json"
+
+        file_list = glob.glob(current_db_information["JSPOC"]["source_file_directory"] + "*.tle")
 
         start_date, end_date = convert_date_range(start_date, end_date, current_db_information["JSPOC"])
         current_lowest_date = "9999-12-31"
         current_highest_date = "1990-01-01"
 
         try:
-                with open("updated_database.json") as updated_database_file:
+                with open(current_db_information["JSPOC"]["created_database_name"]) as updated_database_file:
                         updated_json = json.load(updated_database_file)
         except FileNotFoundError:
-               print("First time running for database")
+               print("First time running for database for this filename. If this is not the first run, then please stop the run by cressing Ctrl + C and rename the old file according to the new name saved to the config file")
         
         for file_name in file_list:
                 if (isFileNotMerged(start_date, end_date, file_name, current_db_information["JSPOC"])):
@@ -89,11 +93,11 @@ def update_JSPOC_database(start_date, end_date):
                         if datetime.strptime(current_highest_date, "%Y-%m-%d") < (datetime.strptime(Path(file_name).stem, "%Y-%m-%d")):
                                 current_highest_date = Path(file_name).stem
 
-                        source_frame = load_dataframe("../../test_JSPOC/TLE/" + Path(file_name).stem + ".tle")
+                        source_frame = load_dataframe(current_db_information["JSPOC"]["source_file_directory"] + Path(file_name).stem + ".tle")
                         source_frame.rename(columns={'norad': 'NORAD_CAT_ID'}, inplace = "True")
                         source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(leading_zero_removal)
                         source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(strip_series_strings).astype('int')
-                        norad_num_file = "../../test_JSPOC/TLE/satcat-" + Path(file_name).stem + ".json"
+                        norad_num_file = current_db_information["JSPOC"]["source_file_directory"] + "satcat-" + Path(file_name).stem + ".json"
                         try:
                                 with open(norad_num_file) as json_file:
                                         json_data = pd.DataFrame(json.load(json_file))
@@ -124,9 +128,9 @@ def update_JSPOC_database(start_date, end_date):
                         
         update_date_range(current_lowest_date, current_highest_date, "JSPOC", current_db_information)
         
-        with open('updated_database.json', 'w') as f:
+        with open(current_db_information["JSPOC"]["created_database_name"], 'w') as f:
                 f.write(json.dumps(updated_json, indent = 2))
-        with open('current_db_information.json', 'w') as f:
+        with open('config.json', 'w') as f:
                 f.write(json.dumps(current_db_information, indent = 2))
 
 # Main Function
