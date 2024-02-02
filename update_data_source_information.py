@@ -101,13 +101,22 @@ def update_JSPOC_database(start_date, end_date):
                                 source_frame["LAUNCH"] = "N/F"
                         
                         json_obj = source_frame.to_json(orient = 'records')
-                        for tuple in json.loads(json_obj):
-                                tmp = 1
-                                if tuple["NORAD_CAT_ID"] in updated_json:
-                                        tmp = updated_json[tuple["NORAD_CAT_ID"]]["Occurence"]
-                                
-                                updated_json[tuple["NORAD_CAT_ID"]] = tuple
-                                updated_json[tuple["NORAD_CAT_ID"]]["Occurence"] = tmp + 1
+                        for tuple in json.loads(json_obj):                                
+                                if tuple["NORAD_CAT_ID"] not in updated_json:
+                                        current_tuple = {
+                                                "epoch_year": tuple["epoch_year"],
+                                                "epoch_day": tuple["epoch_day"],
+                                        }
+                                        updated_json[tuple["NORAD_CAT_ID"]] = current_tuple
+                                        updated_json[tuple["NORAD_CAT_ID"]]["frequencies"] = [1]
+                                        updated_json[tuple["NORAD_CAT_ID"]]["n_data_change"] = 1
+                                elif updated_json[tuple["NORAD_CAT_ID"]]["epoch_year"] != tuple["epoch_year"] or updated_json[tuple["NORAD_CAT_ID"]]["epoch_day"] != tuple["epoch_day"]:
+                                        updated_json[tuple["NORAD_CAT_ID"]]["frequencies"].append(1)
+                                        updated_json[tuple["NORAD_CAT_ID"]]["epoch_year"] = tuple["epoch_year"]
+                                        updated_json[tuple["NORAD_CAT_ID"]]["epoch_day"] = tuple["epoch_day"]
+                                        updated_json[tuple["NORAD_CAT_ID"]]["n_data_change"] += 1
+                                else:
+                                        updated_json[tuple["NORAD_CAT_ID"]]["frequencies"][updated_json[tuple["NORAD_CAT_ID"]]["n_data_change"] - 1] += 1
                         
                         
         update_date_range(current_lowest_date, current_highest_date, "JSPOC", current_db_information)
