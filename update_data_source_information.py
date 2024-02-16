@@ -5,7 +5,7 @@ import glob
 from pathlib import Path
 import json
 from datetime import datetime
-from dateutil.parser import parse
+import os
 
 def leading_zero_removal(x):
         return x.lstrip("0")
@@ -27,7 +27,7 @@ def convert_date_range(start_date, end_date, current_db_information):
                 is_a_date = verify_date(current_db_information["start_date"])
         if start_date is None or is_a_date == False:
                 return start_date, end_date
-                        
+
         if datetime.strptime(current_db_information["end_date"], "%Y-%m-%d") < datetime.strptime(start_date, "%Y-%m-%d"):
                 start_date = current_db_information["end_date"]
         elif datetime.strptime(current_db_information["start_date"], "%Y-%m-%d") > datetime.strptime(end_date, "%Y-%m-%d"):
@@ -57,17 +57,17 @@ def isFileNotMerged(start_date, end_date, file_name, current_db_information):
         else:
                 return ((datetime.strptime( Path(file_name).stem, "%Y-%m-%d") >= datetime.strptime(start_date, "%Y-%m-%d"))
                         and (datetime.strptime( Path(file_name).stem, "%Y-%m-%d") <= datetime.strptime(end_date, "%Y-%m-%d")))
-        
+
 def calculateRunningAvg(duration, frequencies, num_of_frequencies):
         num_of_considered_frequencies = 0
         frequency_sum = 0
-        while(num_of_frequencies > 0 and duration >= frequencies[num_of_frequencies - 1]):
-                duration -= frequencies[num_of_frequencies - 1]
-                frequency_sum += frequencies[num_of_frequencies - 1]
+        while(num_of_frequencies > 0 and duration >= abs(frequencies[num_of_frequencies - 1])):
+                duration -= abs(frequencies[num_of_frequencies - 1])
+                frequency_sum += abs(frequencies[num_of_frequencies - 1])
                 num_of_frequencies -= 1
                 num_of_considered_frequencies += 1
 
-        if duration > 0:
+        if duration > 0 and num_of_frequencies > 0:
                 num_of_considered_frequencies += 1
                 frequency_sum += duration
 
@@ -91,8 +91,8 @@ def update_JSPOC_database(start_date, end_date):
                 current_db_information["JSPOC"]["created_database_name"] = "updated_database.json"
 
         file_list = glob.glob(current_db_information["JSPOC"]["source_file_directory"] + "*.tle")
-
-        start_date, end_date = convert_date_range(start_date, end_date, current_db_information["JSPOC"])
+        file_list = sorted(file_list)
+        # start_date, end_date = convert_date_range(start_date, end_date, current_db_information["JSPOC"])
         current_lowest_date = "9999-12-31"
         current_highest_date = "1990-01-01"
         try:
@@ -112,20 +112,40 @@ def update_JSPOC_database(start_date, end_date):
                         source_frame = load_dataframe(current_db_information["JSPOC"]["source_file_directory"] + Path(file_name).stem + ".tle")
                         source_frame.rename(columns={'norad': 'NORAD_CAT_ID'}, inplace = "True")
                         source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(leading_zero_removal)
-                        source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(strip_series_strings).astype('int')
-                        norad_num_file = current_db_information["JSPOC"]["source_file_directory"] + "satcat-" + Path(file_name).stem + ".json"
-                        try:
-                                with open(norad_num_file) as json_file:
-                                        json_data = pd.DataFrame(json.load(json_file))
-                                        json_data["NORAD_CAT_ID"] = json_data["NORAD_CAT_ID"].apply(strip_series_strings).astype('int')
-                                        source_frame = source_frame.merge(json_data, how='inner', on='NORAD_CAT_ID')
-                        except FileNotFoundError:
-                                source_frame["COUNTRY"] = "N/F"
-                                source_frame["LAUNCH"] = "N/F"
+                        source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(strip_series_strings)
+                        # norad_num_file = current_db_information["JSPOC"]["source_file_directory"] + "satcat-" + Path(file_name).stem + ".json"
+                        # try:
+                        #         with open(norad_num_file) as json_file:
+                        #                 json_data = pd.DataFrame(json.load(json_file))
+                        #                 json_data["NORAD_CAT_ID"] = json_data["NORAD_CAT_ID"].apply(strip_series_strings).astype('int')
+                        #                 source_frame = source_frame.merge(json_data, how='inner', on='NORAD_CAT_ID')
+                        # except FileNotFoundError:
+                        #         source_frame["COUNTRY"] = "N/F"
+                        #         source_frame["LAUNCH"] = "N/F"
+
+                        unprocessed_records = dict.fromkeys(updated_json.keys(), True)
 
                         json_obj = source_frame.to_json(orient = 'records')
+
                         for tuple in json.loads(json_obj):
-                                if tuple["NORAD_CAT_ID"] not in updated_json:
+                                if tuple["NORAD_CAT_ID"] in unprocessed_records.keys():
+                                        existing_record = updated_json[tuple["NORAD_CAT_ID"]]
+                                        if existing_record["frequencies"][existing_record["num_of_frequencies"] - 1] < 1:
+                                                existing_record["latest_epoch_year"] = tuple["epoch_year"]
+                                                existing_record["latest_epoch_day"] = tuple["epoch_day"]
+                                                existing_record["frequencies"].append(1)
+                                                existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
+                                        elif existing_record["latest_epoch_year"] != tuple["epoch_year"] or existing_record["latest_epoch_day"] != tuple["epoch_day"]:
+                                                existing_record["frequencies"].append(1)
+                                                existing_record["latest_epoch_year"] = tuple["epoch_year"]
+                                                existing_record["latest_epoch_day"] = tuple["epoch_day"]
+                                                existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
+                                                existing_record["num_of_frequencies"] += 1
+                                        else:
+                                                existing_record["frequencies"][existing_record["num_of_frequencies"] - 1] += 1
+                                                existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"])
+                                else:
+                                        unprocessed_records[tuple["NORAD_CAT_ID"]] = True
                                         current_tuple = {
                                                 "name": tuple["name"],
                                                 "first_epoch_year": tuple["epoch_year"],
@@ -137,15 +157,24 @@ def update_JSPOC_database(start_date, end_date):
                                         updated_json[tuple["NORAD_CAT_ID"]]["frequencies"] = [1]
                                         updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"] = 1
                                         updated_json[tuple["NORAD_CAT_ID"]]["avg_frequency"] = 1
-                                elif updated_json[tuple["NORAD_CAT_ID"]]["latest_epoch_year"] != tuple["epoch_year"] or updated_json[tuple["NORAD_CAT_ID"]]["latest_epoch_day"] != tuple["epoch_day"]:
-                                        updated_json[tuple["NORAD_CAT_ID"]]["frequencies"].append(1)
-                                        updated_json[tuple["NORAD_CAT_ID"]]["latest_epoch_year"] = tuple["epoch_year"]
-                                        updated_json[tuple["NORAD_CAT_ID"]]["latest_epoch_day"] = tuple["epoch_day"]
-                                        updated_json[tuple["NORAD_CAT_ID"]]["avg_frequency"] = ((updated_json[tuple["NORAD_CAT_ID"]]["avg_frequency"] * updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"]) + 1) / (updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"] + 1)
-                                        updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"] += 1
-                                else:
-                                        updated_json[tuple["NORAD_CAT_ID"]]["frequencies"][updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"] - 1] += 1
-                                        updated_json[tuple["NORAD_CAT_ID"]]["avg_frequency"] = ((updated_json[tuple["NORAD_CAT_ID"]]["avg_frequency"] * updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"]) + 1) / (updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"])
+
+                                
+                                updated_json[tuple["NORAD_CAT_ID"]]["running_avg_past_thirty_days"] = calculateRunningAvg(30, 
+                                                updated_json[tuple["NORAD_CAT_ID"]]["frequencies"], updated_json[tuple["NORAD_CAT_ID"]]["num_of_frequencies"])
+                                unprocessed_records[tuple["NORAD_CAT_ID"]] = False
+
+                        for norad_cat_id in unprocessed_records:
+                                if unprocessed_records[norad_cat_id] == True:
+                                        if updated_json[norad_cat_id]["num_of_frequencies"] > 0 and updated_json[norad_cat_id]["frequencies"][updated_json[norad_cat_id]["num_of_frequencies"] - 1] < 1:
+                                                updated_json[norad_cat_id]["frequencies"][updated_json[norad_cat_id]["num_of_frequencies"] - 1] -= 1
+                                                existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"])
+                                        else:
+                                                updated_json[norad_cat_id]["frequencies"].append(-1)
+                                                updated_json[norad_cat_id]["num_of_frequencies"] += 1
+                                                existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
+                                        
+                                        updated_json[norad_cat_id]["running_avg_past_thirty_days"] = calculateRunningAvg(30, 
+                                                updated_json[norad_cat_id]["frequencies"], updated_json[norad_cat_id]["num_of_frequencies"])
 
 
         update_date_range(current_lowest_date, current_highest_date, "JSPOC", current_db_information)
