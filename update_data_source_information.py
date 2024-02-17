@@ -135,6 +135,7 @@ def update_JSPOC_database(start_date, end_date):
                                                 existing_record["latest_epoch_day"] = tuple["epoch_day"]
                                                 existing_record["frequencies"].append(1)
                                                 existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
+                                                existing_record["num_of_frequencies"] += 1
                                         elif existing_record["latest_epoch_year"] != tuple["epoch_year"] or existing_record["latest_epoch_day"] != tuple["epoch_day"]:
                                                 existing_record["frequencies"].append(1)
                                                 existing_record["latest_epoch_year"] = tuple["epoch_year"]
@@ -142,8 +143,8 @@ def update_JSPOC_database(start_date, end_date):
                                                 existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
                                                 existing_record["num_of_frequencies"] += 1
                                         else:
-                                                existing_record["frequencies"][existing_record["num_of_frequencies"] - 1] += 1
                                                 existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"])
+                                                existing_record["frequencies"][existing_record["num_of_frequencies"] - 1] += 1
                                 else:
                                         unprocessed_records[tuple["NORAD_CAT_ID"]] = True
                                         current_tuple = {
@@ -170,8 +171,8 @@ def update_JSPOC_database(start_date, end_date):
                                                 existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"])
                                         else:
                                                 updated_json[norad_cat_id]["frequencies"].append(-1)
-                                                updated_json[norad_cat_id]["num_of_frequencies"] += 1
                                                 existing_record["avg_frequency"] = ((existing_record["avg_frequency"] * existing_record["num_of_frequencies"]) + 1) / (existing_record["num_of_frequencies"] + 1)
+                                                updated_json[norad_cat_id]["num_of_frequencies"] += 1
                                         
                                         updated_json[norad_cat_id]["running_avg_past_thirty_days"] = calculateRunningAvg(30, 
                                                 updated_json[norad_cat_id]["frequencies"], updated_json[norad_cat_id]["num_of_frequencies"])
