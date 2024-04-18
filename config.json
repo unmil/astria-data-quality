@@ -1,8 +1,1 @@
-{
-  "JSPOC": {
-    "source_file_directory": "../../test_JSPOC/TLE/",
-    "created_database_name": "updated_database.json",
-    "start_date": "2022-01-01",
-    "end_date": "2023-03-21"
-  }
-}
+{"JSPOC": {"source_file_directory": "../../test_JSPOC/TLE/", "created_database_name": "updated_database.json", "error_file_name": "Error_Log.txt", "start_date": "2018-01-01", "end_date": "2024-03-08"}}

@@ -6,6 +6,13 @@ from pathlib import Path
 import json
 from datetime import datetime
 import os
+import mmap
+from itertools import islice
+
+class InvalidTLEFormat(Exception):
+        default_message = "Invalid TLE Format" 
+        def __init__(self, message):
+                super().__init__(message or default_message)
 
 def leading_zero_removal(x):
         return x.lstrip("0")
@@ -73,6 +80,21 @@ def calculateRunningAvg(duration, frequencies, num_of_frequencies):
 
         return frequency_sum / num_of_considered_frequencies
 
+def checkFileErrors(current_db_information, file_name):
+        with open(current_db_information["JSPOC"]["source_file_directory"] + Path(file_name).stem + ".tle") as input_file:
+                try:
+                        head = list(islice(input_file, 3))
+                        tle_lines = ''.join(head).strip().splitlines()
+                        t = TLE.from_lines(*tle_lines)
+                except Exception as err:
+                        raise InvalidTLEFormat(f'Invalid TLE Format. Error: {err}')
+
+                s = mmap.mmap(input_file.fileno(), 0, access=mmap.ACCESS_READ)
+                if s.find(b'NO TLE') != -1:
+                        raise InvalidTLEFormat('Invalid TLE Format. Error: the string "NO TLE" exist in the file')
+                
+
+
 def update_JSPOC_database(start_date, end_date):
         current_db_information = {}
         updated_json = {}
@@ -99,7 +121,10 @@ def update_JSPOC_database(start_date, end_date):
                 with open(current_db_information["JSPOC"]["created_database_name"]) as updated_database_file:
                         updated_json = json.load(updated_database_file)
         except FileNotFoundError:
-               print("First time running for database for this filename. If this is not the first run, then please stop the run by cressing Ctrl + C and rename the old file according to the new name saved to the config file")
+               print("First time running for database for this filename. If this is not the first run, then please stop the run by pressing Ctrl + C and rename the old file according to the new name saved to the config file")
+
+        error_log = open(current_db_information["JSPOC"]["error_file_name"], "a")
+        print(len(file_list))
 
         for file_name in file_list:
                 if (isFileNotMerged(start_date, end_date, file_name, current_db_information["JSPOC"])):
@@ -109,10 +134,24 @@ def update_JSPOC_database(start_date, end_date):
                         if datetime.strptime(current_highest_date, "%Y-%m-%d") < (datetime.strptime(Path(file_name).stem, "%Y-%m-%d")):
                                 current_highest_date = Path(file_name).stem
 
-                        source_frame = load_dataframe(current_db_information["JSPOC"]["source_file_directory"] + Path(file_name).stem + ".tle")
-                        source_frame.rename(columns={'norad': 'NORAD_CAT_ID'}, inplace = "True")
-                        source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(leading_zero_removal)
-                        source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(strip_series_strings)
+                        source_frame = pd.DataFrame()
+
+                        try:
+                                checkFileErrors(current_db_information, file_name)                                
+                        except Exception as err:
+                                error_log.write(f"File {Path(file_name).stem}: {err=}\n")
+                                continue
+
+                        try:
+                                source_frame = load_dataframe(current_db_information["JSPOC"]["source_file_directory"] + Path(file_name).stem + ".tle")
+                                source_frame.rename(columns={'norad': 'NORAD_CAT_ID'}, inplace = "True")
+                                source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(leading_zero_removal)
+                                source_frame["NORAD_CAT_ID"] = source_frame["NORAD_CAT_ID"].apply(strip_series_strings)
+        
+                        except Exception as err:
+                                print(f"File {file_name}: Unexpected Error. {err=}, {type(err)=}")
+        
+                        # Commented out part is needed to merge satcat for JSPOC
                         # norad_num_file = current_db_information["JSPOC"]["source_file_directory"] + "satcat-" + Path(file_name).stem + ".json"
                         # try:
                         #         with open(norad_num_file) as json_file:
